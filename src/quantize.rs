@@ -31,6 +31,13 @@ impl QLinear {
 
 impl Module for QLinear {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        self.inner.forward(xs)
+        // QMatMul expects F32 input — cast if needed (e.g. F16 on GPU) and cast back
+        let in_dtype = xs.dtype();
+        if in_dtype == candle_core::DType::F32 {
+            self.inner.forward(xs)
+        } else {
+            let out = self.inner.forward(&xs.to_dtype(candle_core::DType::F32)?)?;
+            out.to_dtype(in_dtype)
+        }
     }
 }

@@ -1,57 +1,114 @@
-# glm-ocr-rs
+# glm-ocr
 
-> *The lightest VLM that still gets document structure.*
+A pure Rust OCR inference engine powered by the [GLM-OCR](https://huggingface.co/unsloth/GLM-OCR) vision-language model. Built on the [candle](https://github.com/huggingface/candle) ML framework — no Python or PyTorch required.
 
-Pure Rust implementation of [GLM-OCR](https://huggingface.co/unsloth/GLM-OCR) — a 0.9B vision-language model for document understanding. Built from scratch on [candle](https://github.com/huggingface/candle), every layer hand-ported to Rust. The entire model runs from a single binary.
+## Features
 
-## Why GLM-OCR?
-
-At 0.9B parameters (~2.5 GB quantized), GLM-OCR is small enough to run on a laptop GPU but smart enough to understand tables, formulas, and complex document layouts — not just read text line by line.
-
-## What You Get
-
-- **One binary. Zero dependencies.** Ship it, `scp` it, Docker it — it just works
-- **CPU or GPU** — Q8_0 quantized CPU or CUDA F16 for when you're impatient
-- **Layout-aware OCR** — doesn't just dump text, it *understands* your document structure
-- **Structured JSON output** — sections, bounding boxes, key-value pairs, parsed tables — ready for your pipeline
+- **Single binary** — no Python, no pip, no virtual environments
+- **CPU and GPU** — runs on any x86 CPU; optional CUDA support for ~10x speedup
+- **Q8_0 / Q4_0 quantization** — faster CPU inference with minimal quality loss
+- **Layout detection** — automatic document segmentation using PP-DocLayout-M
+- **Structured output** — JSON output with typed sections, bounding boxes, key-value pairs, and parsed tables
+- **Large document support** — automatic strip-based processing for high-resolution pages
 
 ## Quick Start
 
+### Prerequisites
+
+- Rust 1.75+ (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- For GPU: CUDA toolkit and an NVIDIA GPU
+- For layout detection: ONNX Runtime (`libonnxruntime.so` — see [Layout Detection](#layout-detection))
+
+### Build
+
 ```bash
-# Build it
+# CPU only (default)
 cargo build --release
 
-# Run it
-./target/release/glm-ocr --image invoice.png --quantize
-
-# Layout detection + tables + JSON
-./target/release/glm-ocr --image invoice.png --quantize --layout --json
-
-# Got a GPU? (~10x faster)
+# With CUDA GPU support
 CUDA_COMPUTE_CAP=86 cargo build --release --features cuda
-./target/release/glm-ocr --image invoice.png --gpu 0 --layout
 ```
 
-First run downloads the model (~2.65 GB) from HuggingFace. After that, it's all local.
+> Set `CUDA_COMPUTE_CAP` to match your GPU architecture (e.g., `86` for RTX 3060/4060, `89` for RTX 4090). Check yours with `nvidia-smi --query-gpu=compute_cap --format=csv`.
 
-## What It Actually Does
+### Run
 
-Feed it a document image. It gives you back structured, readable text.
-
-**Without layout** — straightforward text recognition:
 ```bash
-./target/release/glm-ocr --image page.png --quantize
+# Basic text recognition
+./target/release/glm-ocr --image document.png
+
+# With Q8_0 quantization (recommended for CPU)
+./target/release/glm-ocr --image document.png --quantize q8_0
+
+# With layout detection
+./target/release/glm-ocr --image document.png --quantize q8_0 --layout
+
+# JSON structured output
+./target/release/glm-ocr --image document.png --quantize q8_0 --layout --json
+
+# GPU inference
+./target/release/glm-ocr --image document.png --gpu 0
+
+# GPU + layout + JSON
+./target/release/glm-ocr --image document.png --gpu 0 --layout --json
 ```
 
-**With layout** — detects regions (titles, tables, text blocks, headers, footers), OCRs each one with the right prompt, assembles in reading order:
-```bash
-./target/release/glm-ocr --image page.png --quantize --layout
-```
+The model weights (~2.65 GB) are automatically downloaded from HuggingFace on first run.
 
-**With JSON** — machine-readable structured output:
-```bash
-./target/release/glm-ocr --image page.png --quantize --layout --json
-```
+## CLI Options
+
+| Flag | Description |
+|------|-------------|
+| `--image <PATH>` | Path to the input image (required) |
+| `--prompt <TEXT>` | OCR prompt (default: `"Text Recognition:"`) |
+| `--max-tokens <N>` | Maximum tokens to generate (default: 8192) |
+| `--quantize <LEVEL>` | Quantize text decoder: `q8_0` (recommended) or `q4_0` |
+| `--layout` | Enable layout detection for document segmentation |
+| `--json` | Output structured JSON (requires `--layout`) |
+| `--gpu <N>` | Use CUDA GPU N for inference (e.g., `--gpu 0`) |
+| `--model-id <ID>` | Custom HuggingFace model ID (default: `unsloth/GLM-OCR`) |
+
+## Supported Prompts
+
+GLM-OCR supports three built-in prompts:
+
+| Prompt | Use Case |
+|--------|----------|
+| `Text Recognition:` | General text and document OCR (default) |
+| `Table Recognition:` | Outputs HTML table structure |
+| `Formula Recognition:` | LaTeX math formula recognition |
+
+In `--layout` mode, the prompt is automatically selected per region type.
+
+## Layout Detection
+
+Layout mode uses [PP-DocLayout-M](https://github.com/PaddlePaddle/PaddleOCR) (PicoDet-L) to segment the document page into regions before running OCR on each one. This improves accuracy on complex multi-region documents (invoices, purchase orders, reports).
+
+### Setup
+
+1. Download the ONNX model:
+   ```bash
+   # From PaddleOCR model zoo or convert from PaddlePaddle format
+   # Place the model file as pp-doclayout-m.onnx
+   ```
+
+2. Set the model path:
+   ```bash
+   export LAYOUT_MODEL_PATH=/path/to/pp-doclayout-m.onnx
+   ```
+
+3. Ensure ONNX Runtime is available:
+   ```bash
+   export ORT_DYLIB_PATH=/path/to/libonnxruntime.so
+   ```
+
+### Detected Region Types
+
+The layout detector recognizes 23 region types including: `text`, `table`, `image`, `doc_title`, `paragraph_title`, `header`, `footer`, `formula`, `seal`, `chart`, and more.
+
+## Structured JSON Output
+
+With `--layout --json`, the output is a structured document:
 
 ```json
 {
@@ -71,7 +128,7 @@ Feed it a document image. It gives you back structured, readable text.
     {
       "label": "table",
       "bbox": [50.0, 420.0, 1190.0, 900.0],
-      "text": "...",
+      "text": "Item Description Qty Amount\n1 Widget A 10 500.00",
       "key_values": [],
       "table": {
         "headers": ["Item", "Description", "Qty", "Amount"],
@@ -82,110 +139,146 @@ Feed it a document image. It gives you back structured, readable text.
 }
 ```
 
-## CLI Reference
+## Library Usage
 
-| Flag | What it does |
-|------|-------------|
-| `--image <PATH>` | Input image (required) |
-| `--prompt <TEXT>` | OCR prompt — `"Text Recognition:"`, `"Table Recognition:"`, or `"Formula Recognition:"` |
-| `--quantize` | Q8_0 quantization — 2-3x faster on CPU, basically free |
-| `--layout` | Smart document segmentation via PP-DocLayout-M |
-| `--json` | Structured JSON output (needs `--layout`) |
-| `--gpu <N>` | CUDA GPU inference (build with `--features cuda`) |
-| `--max-tokens <N>` | Token limit per region (default: 8192) |
-| `--model-id <ID>` | Custom HuggingFace model (default: `unsloth/GLM-OCR`) |
+Add to your `Cargo.toml`:
 
-## Use It As a Library
+```toml
+[dependencies]
+glm-ocr = { path = "path/to/glm-ocr" }
+```
 
 ```rust
 use glm_ocr::GlmOcr;
 
-let image = image::open("document.png")?;
+fn main() -> anyhow::Result<()> {
+    let image = image::open("document.png")?;
 
-// Simple OCR
-let ocr = GlmOcr::new(None, true)?;
-let text = ocr.recognize(&image, "Text Recognition:")?;
+    // Basic OCR
+    let ocr = GlmOcr::new(None, Some("q8_0"))?;
+    let text = ocr.recognize(&image, "Text Recognition:")?;
+    println!("{text}");
 
-// Layout-aware structured OCR
-let mut layout = glm_ocr::layout::LayoutDetector::new()?;
-let doc = ocr.recognize_layout_structured(&image, &mut layout, 8192)?;
+    // Layout-aware structured OCR
+    let mut layout = glm_ocr::layout::LayoutDetector::new()?;
+    let doc = ocr.recognize_layout_structured(&image, &mut layout, 8192)?;
 
-// Markdown or JSON — your choice
-println!("{}", doc.to_markdown());
-println!("{}", doc.to_json()?);
+    // Output as markdown
+    println!("{}", doc.to_markdown());
 
-// Or dig into the structure
-for section in &doc.sections {
-    println!("[{}] @ {:?}", section.label, section.bbox);
-    for kv in &section.key_values {
-        println!("  {} = {}", kv.key, kv.value);
+    // Output as JSON
+    println!("{}", doc.to_json()?);
+
+    // Access structured data
+    for section in &doc.sections {
+        println!("[{}] {}", section.label, section.bbox[0]);
+        for kv in &section.key_values {
+            println!("  {} = {}", kv.key, kv.value);
+        }
+        if let Some(table) = &section.table {
+            println!("  Table: {} cols x {} rows", table.headers.len(), table.rows.len());
+        }
     }
-    if let Some(table) = &section.table {
-        println!("  {}x{} table", table.headers.len(), table.rows.len());
-    }
+
+    Ok(())
 }
 ```
 
-GPU:
+### GPU Usage
+
 ```rust
-let device = candle_core::Device::new_cuda(0)?;
-let ocr = GlmOcr::new_with_device(None, false, device)?;
+use candle_core::Device;
+use glm_ocr::GlmOcr;
+
+let device = Device::new_cuda(0)?;
+let ocr = GlmOcr::new_with_device(None, None, device)?; // quantization auto-skipped on GPU
 ```
+
+## HTTP API Server
+
+A built-in Axum server with hybrid GPU/CPU worker routing.
+
+### Build & Run
+
+```bash
+# CPU only
+cargo build --release --bin glm-ocr-server
+
+# With GPU
+CUDA_COMPUTE_CAP=86 cargo build --release --features cuda --bin glm-ocr-server
+
+# Start (GPU auto-detected at runtime)
+LAYOUT_MODEL_PATH=./pp-doclayout-m.onnx ./target/release/glm-ocr-server --quantize q8_0 --port 8080
+```
+
+### Endpoints
+
+**Health Check:**
+```bash
+curl http://localhost:8080/health
+# {"status":"ok","workers":[{"device":"gpu:0","busy":false},{"device":"cpu","busy":false}]}
+```
+
+**OCR:**
+```bash
+# Basic text recognition (auto-routes to GPU if available)
+curl -X POST http://localhost:8080/ocr -F image=@document.png
+
+# Layout + structured JSON
+curl -X POST http://localhost:8080/ocr -F image=@document.png -F layout=true -F json=true
+
+# Force CPU
+curl -X POST http://localhost:8080/ocr -F image=@document.png -F device=cpu
+```
+
+**POST /ocr fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `image` | file | required | Image file |
+| `prompt` | string | `Text Recognition:` | OCR prompt |
+| `layout` | bool | `false` | Enable layout detection |
+| `json` | bool | `false` | Structured JSON output (requires `layout`) |
+| `max_tokens` | int | `8192` | Max tokens per region |
+| `device` | string | `auto` | `auto`, `gpu`, or `cpu` |
+
+### Server Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host` | `0.0.0.0` | Bind address |
+| `--port` | `8080` | Listen port |
+| `--quantize` | none | `q8_0` or `q4_0` (CPU only, skipped on GPU) |
+| `--model-id` | `unsloth/GLM-OCR` | HuggingFace model ID |
+| `--max-tokens` | `8192` | Default max tokens |
 
 ## Performance
 
-| Mode | Time / Page | Vibe |
-|------|------------|------|
-| CPU | ~300s | Go make coffee |
-| CPU + Q8_0 | ~65-95s | Scroll Twitter once |
-| GPU (RTX 4060) | ~12s | Blink and it's done |
+Benchmarks on a single document page (A4, 150 DPI):
 
-VLMs generate tokens one at a time — each token waits for the previous one. That's physics, not a bug. GPU helps because it crunches each token's matrix math faster, not because it parallelizes generation.
+| Mode | Time per Page | Notes |
+|------|--------------|-------|
+| CPU (F32) | ~300s | No quantization |
+| CPU (Q8_0) | ~78s | Recommended for CPU |
+| GPU (RTX 4060, F16) | ~9s | Native F16, no quantization |
 
-## Layout Detection Setup
+> Quantization is automatically skipped on GPU — native F16 matmul is faster than QMatMul's F32 dequantize path. Inference speed is bottlenecked by autoregressive token generation (each token depends on the previous).
 
-Uses [PP-DocLayout-M](https://github.com/PaddlePaddle/PaddleOCR) to segment pages into 23 region types — text, table, title, header, footer, formula, image, seal, chart, and more.
-
-```bash
-export LAYOUT_MODEL_PATH=/path/to/pp-doclayout-m.onnx
-export ORT_DYLIB_PATH=/path/to/libonnxruntime.so
-```
-
-## Under the Hood
+## Architecture
 
 ```
-GLM-OCR (0.9B params)
-├── CogViT Vision Encoder
-│   ├── 24 transformer layers (1024 hidden, 16 heads)
-│   ├── 14x14 patch embedding with 2x2 merge
-│   ├── Vision rotary embeddings (head_dim/2)
-│   └── Conv2d spatial downsampler
-├── GLM Text Decoder
-│   ├── 16 transformer layers (1536 hidden)
-│   ├── Grouped-Query Attention (16 attn / 8 KV heads)
-│   ├── Multi-axis RoPE [16, 24, 24]
-│   └── 4-norm residual blocks
-└── PP-DocLayout-M (PicoDet-L ONNX)
-    └── 23-class document layout detection
+GLM-OCR (0.9B parameters)
+├── CogViT Vision Encoder (24 layers, 1024 hidden, 16 heads)
+│   ├── Patch Embedding (14x14 patches, merge_size=2)
+│   ├── Vision Rotary Embeddings (head_dim/2 = 32)
+│   └── Spatial Downsample (Conv2d merger)
+├── Text Decoder (16 layers, 1536 hidden, 16 attn heads, 8 KV heads)
+│   ├── Grouped-Query Attention (GQA)
+│   ├── Multi-axis Rotary Position Embeddings (mRoPE: [16,24,24])
+│   └── 4-norm blocks (input→attn→post_self_attn→post_attn→mlp→post_mlp)
+└── Layout Detector (PP-DocLayout-M, PicoDet-L ONNX)
+    └── 23 region classes, 640x640 input
 ```
-
-Every one of these components — hand-ported to Rust. No bindings. No FFI wrappers. Pure, native Rust all the way down to the matrix multiplications.
-
-## Build Options
-
-```bash
-# CPU (default)
-cargo build --release
-
-# GPU — set CUDA_COMPUTE_CAP for your card
-# RTX 3060/4060: 86 | RTX 4090: 89 | A100: 80
-CUDA_COMPUTE_CAP=86 cargo build --release --features cuda
-```
-
-### Prerequisites
-- Rust 1.75+
-- For GPU: CUDA toolkit + NVIDIA GPU
-- For layout: ONNX Runtime shared library
 
 ## License
 

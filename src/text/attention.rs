@@ -20,10 +20,10 @@ pub struct KvCache {
 /// V projection: hidden→num_kv_heads*head_dim = 1536→1024
 /// O projection: num_heads*head_dim→hidden = 2048→1536
 pub struct TextAttention {
-    q_proj: Box<dyn Module>,
-    k_proj: Box<dyn Module>,
-    v_proj: Box<dyn Module>,
-    o_proj: Box<dyn Module>,
+    q_proj: Box<dyn Module + Send + Sync>,
+    k_proj: Box<dyn Module + Send + Sync>,
+    v_proj: Box<dyn Module + Send + Sync>,
+    o_proj: Box<dyn Module + Send + Sync>,
     num_heads: usize,
     num_kv_heads: usize,
     num_kv_groups: usize,
@@ -39,10 +39,10 @@ impl TextAttention {
         let num_kv_heads = config.num_key_value_heads;
 
         let (q_proj, k_proj, v_proj, o_proj): (
-            Box<dyn Module>,
-            Box<dyn Module>,
-            Box<dyn Module>,
-            Box<dyn Module>,
+            Box<dyn Module + Send + Sync>,
+            Box<dyn Module + Send + Sync>,
+            Box<dyn Module + Send + Sync>,
+            Box<dyn Module + Send + Sync>,
         ) = if let Some(qdt) = qdtype {
             (
                 Box::new(QLinear::new(hidden, num_heads * head_dim, vb.pp("q_proj"), qdt)?),

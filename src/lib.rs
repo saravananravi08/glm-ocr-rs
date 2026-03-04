@@ -137,10 +137,15 @@ impl GlmOcr {
         let qdtype = parse_quantization(quantize)?;
 
         // Use F16 on GPU for faster inference, F32 on CPU (candle CPU lacks BF16/F16 matmul)
-        let dtype = if device.is_cuda() {
-            DType::F16
+        // Skip quantization on GPU — QMatMul requires F32 so every layer would need
+        // F16→F32→F32→F16 casts, which is slower than native F16 matmul.
+        let (dtype, qdtype) = if device.is_cuda() {
+            if qdtype.is_some() {
+                tracing::info!("GPU detected — skipping quantization (native F16 is faster)");
+            }
+            (DType::F16, None)
         } else {
-            DType::F32
+            (DType::F32, qdtype)
         };
 
         let loader = ModelLoader::new(model_id);

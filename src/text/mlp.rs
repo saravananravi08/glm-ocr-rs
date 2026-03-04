@@ -10,8 +10,8 @@ use crate::quantize::QLinear;
 /// Uses fused gate_up projection: Linear(hidden, 2*intermediate) then split.
 /// No bias on any linear layer.
 pub struct TextMlp {
-    gate_up_proj: Box<dyn Module>,
-    down_proj: Box<dyn Module>,
+    gate_up_proj: Box<dyn Module + Send + Sync>,
+    down_proj: Box<dyn Module + Send + Sync>,
     intermediate_size: usize,
 }
 
@@ -20,7 +20,7 @@ impl TextMlp {
         let hidden = config.hidden_size;
         let intermediate = config.intermediate_size;
 
-        let (gate_up_proj, down_proj): (Box<dyn Module>, Box<dyn Module>) = if let Some(qdt) = qdtype {
+        let (gate_up_proj, down_proj): (Box<dyn Module + Send + Sync>, Box<dyn Module + Send + Sync>) = if let Some(qdt) = qdtype {
             (
                 Box::new(QLinear::new(hidden, 2 * intermediate, vb.pp("gate_up_proj"), qdt)?),
                 Box::new(QLinear::new(intermediate, hidden, vb.pp("down_proj"), qdt)?),
