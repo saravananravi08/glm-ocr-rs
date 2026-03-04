@@ -1,0 +1,30 @@
+[package]
+name = "glm-ocr"
+version = "0.1.0"
+edition = "2021"
+description = "Pure Rust GLM-OCR inference engine using candle"
+license = "MIT"
+
+[[bin]]
+name = "glm-ocr"
+path = "src/main.rs"
+
+[features]
+default = []
+cuda = ["candle-core/cuda", "candle-nn/cuda"]
+
+[dependencies]
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+tokenizers = "0.21"
+image = "0.25"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hf-hub = "0.4"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+ort = { version = "2.0.0-rc.11", features = ["load-dynamic"] }
+ndarray = "0.17"
