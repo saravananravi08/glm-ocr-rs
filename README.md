@@ -196,7 +196,7 @@ let ocr = GlmOcr::new_with_device(None, None, device)?; // quantization auto-ski
 
 ## HTTP API Server
 
-A built-in Axum server with hybrid GPU/CPU worker routing.
+A built-in Axum server with hybrid GPU/CPU worker routing. Models stay loaded in memory — no per-request loading overhead. If compiled with CUDA and a GPU is available, the server automatically loads both a GPU and a CPU worker for concurrent request handling.
 
 ### Build & Run
 
@@ -211,46 +211,181 @@ CUDA_COMPUTE_CAP=86 cargo build --release --features cuda --bin glm-ocr-server
 LAYOUT_MODEL_PATH=./pp-doclayout-m.onnx ./target/release/glm-ocr-server --quantize q8_0 --port 8080
 ```
 
-### Endpoints
-
-**Health Check:**
-```bash
-curl http://localhost:8080/health
-# {"status":"ok","workers":[{"device":"gpu:0","busy":false},{"device":"cpu","busy":false}]}
-```
-
-**OCR:**
-```bash
-# Basic text recognition (auto-routes to GPU if available)
-curl -X POST http://localhost:8080/ocr -F image=@document.png
-
-# Layout + structured JSON
-curl -X POST http://localhost:8080/ocr -F image=@document.png -F layout=true -F json=true
-
-# Force CPU
-curl -X POST http://localhost:8080/ocr -F image=@document.png -F device=cpu
-```
-
-**POST /ocr fields:**
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `image` | file | required | Image file |
-| `prompt` | string | `Text Recognition:` | OCR prompt |
-| `layout` | bool | `false` | Enable layout detection |
-| `json` | bool | `false` | Structured JSON output (requires `layout`) |
-| `max_tokens` | int | `8192` | Max tokens per region |
-| `device` | string | `auto` | `auto`, `gpu`, or `cpu` |
-
 ### Server Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--host` | `0.0.0.0` | Bind address |
 | `--port` | `8080` | Listen port |
-| `--quantize` | none | `q8_0` or `q4_0` (CPU only, skipped on GPU) |
+| `--quantize` | none | `q8_0` or `q4_0` (CPU only, auto-skipped on GPU) |
 | `--model-id` | `unsloth/GLM-OCR` | HuggingFace model ID |
-| `--max-tokens` | `8192` | Default max tokens |
+| `--max-tokens` | `8192` | Default max tokens per region |
+
+### API Reference
+
+#### `GET /health`
+
+Returns server status and worker availability.
+
+```bash
+curl http://localhost:8080/health
+```
+
+```json
+{
+  "status": "ok",
+  "workers": [
+    { "device": "gpu:0", "busy": false },
+    { "device": "cpu", "busy": false }
+  ]
+}
+```
+
+#### `POST /ocr`
+
+Accepts a multipart form with an image and returns OCR results.
+
+**Request fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `image` | file | required | Image file (PNG, JPEG, etc.) |
+| `prompt` | string | `Text Recognition:` | OCR prompt |
+| `layout` | bool | `false` | Enable layout detection |
+| `json` | bool | `false` | Return structured document (requires `layout=true`) |
+| `max_tokens` | int | `8192` | Max tokens per region |
+| `device` | string | `auto` | Worker routing: `auto`, `gpu`, or `cpu` |
+
+**Basic text recognition:**
+
+```bash
+curl -X POST http://localhost:8080/ocr -F image=@document.png
+```
+
+```json
+{
+  "text": "Invoice No: INV-2024-001\nDate: 15/03/2024\n...",
+  "device": "gpu:0",
+  "elapsed_ms": 1234
+}
+```
+
+**Layout detection (markdown):**
+
+```bash
+curl -X POST http://localhost:8080/ocr \
+  -F image=@document.png \
+  -F layout=true
+```
+
+```json
+{
+  "text": "## Invoice\n\n### Items\n\n| Item | Qty | Amount |\n| --- | --- | --- |\n| Widget A | 10 | 500.00 |\n\n_Page 1 of 1_",
+  "device": "gpu:0",
+  "elapsed_ms": 9300
+}
+```
+
+**Layout detection (structured JSON):**
+
+```bash
+curl -X POST http://localhost:8080/ocr \
+  -F image=@document.png \
+  -F layout=true \
+  -F json=true
+```
+
+```json
+{
+  "document": {
+    "width": 1240,
+    "height": 1754,
+    "sections": [
+      {
+        "label": "doc_title",
+        "bbox": [100.0, 50.0, 400.0, 80.0],
+        "text": "Invoice",
+        "key_values": [],
+        "table": null
+      },
+      {
+        "label": "text",
+        "bbox": [50.0, 100.0, 600.0, 300.0],
+        "text": "Invoice No: INV-2024-001\nDate: 15/03/2024",
+        "key_values": [
+          { "key": "Invoice No", "value": "INV-2024-001" },
+          { "key": "Date", "value": "15/03/2024" }
+        ],
+        "table": null
+      },
+      {
+        "label": "table",
+        "bbox": [50.0, 320.0, 600.0, 500.0],
+        "text": "Item Qty Amount\nWidget A 10 500.00",
+        "key_values": [],
+        "table": {
+          "headers": ["Item", "Qty", "Amount"],
+          "rows": [["Widget A", "10", "500.00"]]
+        }
+      }
+    ]
+  },
+  "device": "gpu:0",
+  "elapsed_ms": 9300
+}
+```
+
+**Force a specific device:**
+
+```bash
+# Force CPU (useful when GPU is busy)
+curl -X POST http://localhost:8080/ocr -F image=@document.png -F device=cpu
+
+# Force GPU (returns 503 if no GPU worker)
+curl -X POST http://localhost:8080/ocr -F image=@document.png -F device=gpu
+```
+
+**Error responses:**
+
+```json
+{"error": "missing 'image' field"}
+{"error": "json=true requires layout=true"}
+{"error": "no worker available for requested device"}
+```
+
+### Integration Examples
+
+**Python:**
+
+```python
+import requests
+
+# Basic OCR
+resp = requests.post("http://localhost:8080/ocr",
+    files={"image": open("document.png", "rb")})
+print(resp.json()["text"])
+
+# Layout + structured JSON
+resp = requests.post("http://localhost:8080/ocr",
+    files={"image": open("document.png", "rb")},
+    data={"layout": "true", "json": "true"})
+doc = resp.json()["document"]
+for section in doc["sections"]:
+    print(f"[{section['label']}] {section['text'][:80]}")
+```
+
+**JavaScript (fetch):**
+
+```javascript
+const form = new FormData();
+form.append("image", fs.readFileSync("document.png"), "document.png");
+form.append("layout", "true");
+form.append("json", "true");
+
+const res = await fetch("http://localhost:8080/ocr", { method: "POST", body: form });
+const { document, elapsed_ms } = await res.json();
+console.log(`${document.sections.length} sections in ${elapsed_ms}ms`);
+```
 
 ## Performance
 
