@@ -1,3 +1,4 @@
+use candle_core::quantized::GgmlDType;
 use candle_core::{Result, Tensor};
 use candle_nn::{embedding, linear_no_bias, Embedding, Linear, Module, RmsNorm, VarBuilder};
 
@@ -26,7 +27,7 @@ impl TextDecoder {
     /// `lm_head_vb` points to `lm_head` (at top level, outside `model.language_model`).
     ///
     /// Only loads num_hidden_layers (16). The MTP nextn_predict layer is skipped.
-    pub fn new(config: &TextConfig, vb: VarBuilder, lm_head_vb: VarBuilder, quantize: bool) -> Result<Self> {
+    pub fn new(config: &TextConfig, vb: VarBuilder, lm_head_vb: VarBuilder, qdtype: Option<GgmlDType>) -> Result<Self> {
         let embed_tokens = embedding(config.vocab_size, config.hidden_size, vb.pp("embed_tokens"))?;
 
         // Only use base layers for inference (skip MTP nextn_predict layers)
@@ -36,7 +37,7 @@ impl TextDecoder {
             layers.push(TextDecoderLayer::new(
                 config,
                 vb.pp(format!("layers.{i}")),
-                quantize,
+                qdtype,
             )?);
         }
 

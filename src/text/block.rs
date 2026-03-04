@@ -1,3 +1,4 @@
+use candle_core::quantized::GgmlDType;
 use candle_core::{Result, Tensor};
 use candle_nn::{Module, RmsNorm, VarBuilder};
 
@@ -30,12 +31,12 @@ pub struct TextDecoderLayer {
 }
 
 impl TextDecoderLayer {
-    pub fn new(config: &TextConfig, vb: VarBuilder, quantize: bool) -> Result<Self> {
+    pub fn new(config: &TextConfig, vb: VarBuilder, qdtype: Option<GgmlDType>) -> Result<Self> {
         let hidden = config.hidden_size;
         let eps = config.rms_norm_eps;
 
-        let self_attn = TextAttention::new(config, vb.pp("self_attn"), quantize)?;
-        let mlp = TextMlp::new(config, vb.pp("mlp"), quantize)?;
+        let self_attn = TextAttention::new(config, vb.pp("self_attn"), qdtype)?;
+        let mlp = TextMlp::new(config, vb.pp("mlp"), qdtype)?;
         let input_layernorm = rms_norm(hidden, eps, vb.pp("input_layernorm"))?;
         let post_self_attn_layernorm =
             rms_norm(hidden, eps, vb.pp("post_self_attn_layernorm"))?;

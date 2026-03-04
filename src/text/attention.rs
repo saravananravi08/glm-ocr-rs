@@ -1,3 +1,4 @@
+use candle_core::quantized::GgmlDType;
 use candle_core::{Result, Tensor};
 use candle_nn::{linear_no_bias, Module, VarBuilder};
 
@@ -31,7 +32,7 @@ pub struct TextAttention {
 }
 
 impl TextAttention {
-    pub fn new(config: &TextConfig, vb: VarBuilder, quantize: bool) -> Result<Self> {
+    pub fn new(config: &TextConfig, vb: VarBuilder, qdtype: Option<GgmlDType>) -> Result<Self> {
         let hidden = config.hidden_size;
         let head_dim = config.head_dim;
         let num_heads = config.num_attention_heads;
@@ -42,12 +43,12 @@ impl TextAttention {
             Box<dyn Module>,
             Box<dyn Module>,
             Box<dyn Module>,
-        ) = if quantize {
+        ) = if let Some(qdt) = qdtype {
             (
-                Box::new(QLinear::new(hidden, num_heads * head_dim, vb.pp("q_proj"))?),
-                Box::new(QLinear::new(hidden, num_kv_heads * head_dim, vb.pp("k_proj"))?),
-                Box::new(QLinear::new(hidden, num_kv_heads * head_dim, vb.pp("v_proj"))?),
-                Box::new(QLinear::new(num_heads * head_dim, hidden, vb.pp("o_proj"))?),
+                Box::new(QLinear::new(hidden, num_heads * head_dim, vb.pp("q_proj"), qdt)?),
+                Box::new(QLinear::new(hidden, num_kv_heads * head_dim, vb.pp("k_proj"), qdt)?),
+                Box::new(QLinear::new(hidden, num_kv_heads * head_dim, vb.pp("v_proj"), qdt)?),
+                Box::new(QLinear::new(num_heads * head_dim, hidden, vb.pp("o_proj"), qdt)?),
             )
         } else {
             (

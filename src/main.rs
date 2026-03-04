@@ -31,9 +31,9 @@ struct Cli {
     #[arg(long)]
     layout: bool,
 
-    /// Quantize text decoder weights to Q8_0 for faster inference (~2-3x speedup)
+    /// Quantize text decoder weights for faster inference. Levels: q8_0 (default), q4_0 (faster, lower quality)
     #[arg(long)]
-    quantize: bool,
+    quantize: Option<String>,
 
     /// Output structured JSON instead of markdown (requires --layout)
     #[arg(long)]
@@ -67,7 +67,8 @@ fn main() -> Result<()> {
     // Initialize OCR model
     let start = Instant::now();
     let model_id = cli.model_id.as_deref();
-    let ocr = GlmOcr::new_with_device(model_id, cli.quantize, device)?;
+    let quantize = cli.quantize.as_deref();
+    let ocr = GlmOcr::new_with_device(model_id, quantize, device)?;
     let load_time = start.elapsed();
     eprintln!("OCR model loaded in {load_time:.2?}");
 

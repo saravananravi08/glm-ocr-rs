@@ -11,6 +11,7 @@ pub mod tokenizer;
 pub mod vision;
 
 use anyhow::Result;
+use candle_core::quantized::GgmlDType;
 use candle_core::{DType, Device};
 use image::DynamicImage;
 use serde::Serialize;
@@ -89,11 +90,25 @@ const MAX_MERGED_PATCHES: u32 = 300;
 /// Overlap between adjacent strips in original image pixels.
 const STRIP_OVERLAP: u32 = 56;
 
+/// Parse a quantization level string into a GgmlDType.
+///
+/// Accepts: "q4_0", "q4", "q8_0", "q8", or None for no quantization.
+pub fn parse_quantization(s: Option<&str>) -> Result<Option<GgmlDType>> {
+    match s {
+        None => Ok(None),
+        Some(s) => match s.to_lowercase().as_str() {
+            "q8_0" | "q8" => Ok(Some(GgmlDType::Q8_0)),
+            "q4_0" | "q4" => Ok(Some(GgmlDType::Q4_0)),
+            other => anyhow::bail!("Unknown quantization level: '{}'. Use q4_0 or q8_0.", other),
+        },
+    }
+}
+
 /// High-level GLM-OCR engine.
 ///
 /// Usage:
 /// ```no_run
-/// let ocr = GlmOcr::new(None)?;
+/// let ocr = GlmOcr::new(None, None)?;
 /// let text = ocr.recognize(&image, "Text Recognition:")?;
 /// ```
 pub struct GlmOcr {
@@ -108,8 +123,8 @@ impl GlmOcr {
     ///
     /// Downloads the model from HuggingFace on first use (~2.65GB).
     /// Set `model_id` to use a custom model (default: "unsloth/GLM-OCR").
-    /// Set `quantize` to true to use Q8_0 quantization for ~2-3x faster inference.
-    pub fn new(model_id: Option<&str>, quantize: bool) -> Result<Self> {
+    /// Set `quantize` to a quantization level string ("q8_0", "q4_0") or None.
+    pub fn new(model_id: Option<&str>, quantize: Option<&str>) -> Result<Self> {
         Self::new_with_device(model_id, quantize, Device::Cpu)
     }
 
@@ -117,7 +132,10 @@ impl GlmOcr {
     ///
     /// For GPU: use `Device::new_cuda(0)?` (requires the `cuda` cargo feature).
     /// On GPU, F16 is used for faster matmul; on CPU, F32 is used.
-    pub fn new_with_device(model_id: Option<&str>, quantize: bool, device: Device) -> Result<Self> {
+    /// Set `quantize` to "q8_0" or "q4_0" for quantized inference.
+    pub fn new_with_device(model_id: Option<&str>, quantize: Option<&str>, device: Device) -> Result<Self> {
+        let qdtype = parse_quantization(quantize)?;
+
         // Use F16 on GPU for faster inference, F32 on CPU (candle CPU lacks BF16/F16 matmul)
         let dtype = if device.is_cuda() {
             DType::F16
@@ -137,12 +155,13 @@ impl GlmOcr {
         tracing::info!("Loading model weights (~2.65GB)...");
         let vb = loader.load_weights(dtype, &device)?;
 
-        if quantize {
-            tracing::info!("Building model with Q8_0 quantization...");
-        } else {
-            tracing::info!("Building model...");
+        match qdtype {
+            Some(GgmlDType::Q4_0) => tracing::info!("Building model with Q4_0 quantization..."),
+            Some(GgmlDType::Q8_0) => tracing::info!("Building model with Q8_0 quantization..."),
+            Some(q) => tracing::info!("Building model with {:?} quantization...", q),
+            None => tracing::info!("Building model..."),
         }
-        let model = GlmOcrModel::new(&config, vb, &device, dtype, quantize)?;
+        let model = GlmOcrModel::new(&config, vb, &device, dtype, qdtype)?;
 
         tracing::info!("Model ready on {:?}.", device);
         Ok(Self {

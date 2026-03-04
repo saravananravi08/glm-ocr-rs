@@ -1,3 +1,4 @@
+use candle_core::quantized::GgmlDType;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 
@@ -15,14 +16,14 @@ pub struct GlmOcrModel {
 }
 
 impl GlmOcrModel {
-    pub fn new(config: &GlmOcrConfig, vb: VarBuilder, device: &Device, dtype: DType, quantize: bool) -> candle_core::Result<Self> {
+    pub fn new(config: &GlmOcrConfig, vb: VarBuilder, device: &Device, dtype: DType, qdtype: Option<GgmlDType>) -> candle_core::Result<Self> {
         let model_vb = vb.pp("model");
         let vision_encoder = VisionEncoder::new(&config.vision_config, model_vb.pp("visual"))?;
         let text_decoder = TextDecoder::new(
             &config.text_config,
             model_vb.pp("language_model"),
             vb.pp("lm_head"),
-            quantize,
+            qdtype,
         )?;
 
         Ok(Self {

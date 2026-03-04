@@ -1,3 +1,4 @@
+use candle_core::quantized::GgmlDType;
 use candle_core::{Result, Tensor};
 use candle_nn::{linear_no_bias, Module, VarBuilder};
 
@@ -15,14 +16,14 @@ pub struct TextMlp {
 }
 
 impl TextMlp {
-    pub fn new(config: &TextConfig, vb: VarBuilder, quantize: bool) -> Result<Self> {
+    pub fn new(config: &TextConfig, vb: VarBuilder, qdtype: Option<GgmlDType>) -> Result<Self> {
         let hidden = config.hidden_size;
         let intermediate = config.intermediate_size;
 
-        let (gate_up_proj, down_proj): (Box<dyn Module>, Box<dyn Module>) = if quantize {
+        let (gate_up_proj, down_proj): (Box<dyn Module>, Box<dyn Module>) = if let Some(qdt) = qdtype {
             (
-                Box::new(QLinear::new(hidden, 2 * intermediate, vb.pp("gate_up_proj"))?),
-                Box::new(QLinear::new(intermediate, hidden, vb.pp("down_proj"))?),
+                Box::new(QLinear::new(hidden, 2 * intermediate, vb.pp("gate_up_proj"), qdt)?),
+                Box::new(QLinear::new(intermediate, hidden, vb.pp("down_proj"), qdt)?),
             )
         } else {
             (

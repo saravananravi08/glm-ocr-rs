@@ -1,7 +1,8 @@
-//! Q8_0 quantization utilities for GLM-OCR inference.
+//! Quantization utilities for GLM-OCR inference.
 //!
-//! Quantizes Linear layer weights from F32 to Q8_0 at load time,
-//! reducing memory bandwidth by ~4x for memory-bound decode steps.
+//! Supports Q8_0 and Q4_0 quantization at load time.
+//! Q8_0: ~4x memory bandwidth reduction, minimal quality loss.
+//! Q4_0: ~8x memory bandwidth reduction, some quality loss but faster.
 
 use candle_core::quantized::{GgmlDType, QMatMul, QTensor};
 use candle_core::{Module, Result, Tensor};
@@ -18,11 +19,11 @@ pub struct QLinear {
 impl QLinear {
     /// Create a quantized linear layer from a VarBuilder.
     ///
-    /// Loads the weight as F32 from safetensors, then quantizes to Q8_0.
+    /// Loads the weight as F32 from safetensors, then quantizes to the given dtype.
     /// No bias support (GLM-OCR uses linear_no_bias throughout).
-    pub fn new(in_features: usize, out_features: usize, vb: VarBuilder) -> Result<Self> {
+    pub fn new(in_features: usize, out_features: usize, vb: VarBuilder, qdtype: GgmlDType) -> Result<Self> {
         let weight = vb.get((out_features, in_features), "weight")?;
-        let qtensor = QTensor::quantize(&weight, GgmlDType::Q8_0)?;
+        let qtensor = QTensor::quantize(&weight, qdtype)?;
         let inner = QMatMul::from_qtensor(qtensor)?;
         Ok(Self { inner })
     }
