@@ -2,17 +2,32 @@
 
 > *"What if OCR didn't need Python?"*
 
-A pure Rust OCR inference engine that runs the [GLM-OCR](https://huggingface.co/unsloth/GLM-OCR) vision-language model. No Python. No PyTorch. No `pip install` nightmares. Just `cargo build` and go.
+The first pure Rust implementation of [GLM-OCR](https://huggingface.co/unsloth/GLM-OCR) — a 0.9B vision-language model for document understanding. Built from scratch on [candle](https://github.com/huggingface/candle). No Python. No PyTorch. `cargo build` and go.
 
-Built from scratch on [candle](https://github.com/huggingface/candle) — every layer, every attention head, every rotary embedding hand-ported to Rust. The entire 0.9B parameter model runs from a single binary.
+Every layer, every attention head, every rotary embedding — hand-ported to Rust. The entire model runs from a single binary.
 
-## Why This Exists
+## Why GLM-OCR?
 
-Because deploying Python ML models in production feels like carrying a piano up a staircase. And because someone had to prove that a VLM can live in pure Rust without losing its mind.
+The Rust OCR ecosystem already has solid options:
 
-What you get:
+| Project | Approach | Model Size |
+|---------|----------|-----------|
+| [ocrs](https://github.com/robertknight/ocrs) | Traditional OCR pipeline (detect + recognize) | ~10 MB |
+| [deepseek-ocr.rs](https://github.com/TimmyOVO/deepseek-ocr.rs) | Multi-VLM engine (DeepSeek-OCR, PaddleOCR-VL, DotsOCR) | 4-9 GB |
+| [oar-ocr](https://github.com/GreatV/oar-ocr) | PaddleOCR port via ONNX Runtime | ~10 MB |
+
+So why this?
+
+**GLM-OCR hits a sweet spot.** At 0.9B parameters (~2.5 GB quantized), it's small enough to run on a laptop GPU but smart enough to understand tables, formulas, and complex document layouts — not just read text line by line. It's the lightest VLM that still *gets* document structure.
+
+`deepseek-ocr.rs` is a beast — multi-model, OpenAI-compatible server, DSQ quantization, the works. But their models start at 3B+ params and need 9-50 GB of RAM. Sometimes you just want a focused, single-model tool that fits in 4 GB and does the job.
+
+That's this.
+
+## What You Get
+
 - **One binary. Zero dependencies.** Ship it, `scp` it, Docker it — it just works
-- **CPU or GPU** — Q8_0 quantized CPU inference or CUDA F16 for when you're impatient
+- **CPU or GPU** — Q8_0 quantized CPU or CUDA F16 for when you're impatient
 - **Layout-aware OCR** — doesn't just dump text, it *understands* your document structure
 - **Structured JSON output** — sections, bounding boxes, key-value pairs, parsed tables — ready for your pipeline
 
@@ -25,7 +40,7 @@ cargo build --release
 # Run it
 ./target/release/glm-ocr --image invoice.png --quantize
 
-# Want layout detection? Tables? JSON?
+# Layout detection + tables + JSON
 ./target/release/glm-ocr --image invoice.png --quantize --layout --json
 
 # Got a GPU? (~10x faster)
@@ -39,12 +54,12 @@ First run downloads the model (~2.65 GB) from HuggingFace. After that, it's all 
 
 Feed it a document image. It gives you back structured, readable text.
 
-**Without layout mode** — straightforward text recognition:
+**Without layout** — straightforward text recognition:
 ```bash
 ./target/release/glm-ocr --image page.png --quantize
 ```
 
-**With layout mode** — detects regions (titles, tables, text blocks, headers, footers), OCRs each one with the right prompt, and assembles everything in reading order:
+**With layout** — detects regions (titles, tables, text blocks, headers, footers), OCRs each one with the right prompt, assembles in reading order:
 ```bash
 ./target/release/glm-ocr --image page.png --quantize --layout
 ```
@@ -111,13 +126,11 @@ let text = ocr.recognize(&image, "Text Recognition:")?;
 let mut layout = glm_ocr::layout::LayoutDetector::new()?;
 let doc = ocr.recognize_layout_structured(&image, &mut layout, 8192)?;
 
-// Get markdown
+// Markdown or JSON — your choice
 println!("{}", doc.to_markdown());
-
-// Get JSON
 println!("{}", doc.to_json()?);
 
-// Dig into the structure
+// Or dig into the structure
 for section in &doc.sections {
     println!("[{}] @ {:?}", section.label, section.bbox);
     for kv in &section.key_values {
@@ -142,6 +155,8 @@ let ocr = GlmOcr::new_with_device(None, false, device)?;
 | CPU | ~300s | Go make coffee |
 | CPU + Q8_0 | ~65-95s | Scroll Twitter once |
 | GPU (RTX 4060) | ~12s | Blink and it's done |
+
+For comparison, `deepseek-ocr.rs` reports **~30s per page** with DeepSeek-OCR (3B, macOS Accelerate) — but that's a 3x larger model with more capable hardware acceleration. On the same candle stack, our 0.9B model at 12s/page on a laptop GPU is in the right ballpark.
 
 VLMs generate tokens one at a time — each token waits for the previous one. That's physics, not a bug. GPU helps because it crunches each token's matrix math faster, not because it parallelizes generation.
 
