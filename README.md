@@ -140,8 +140,6 @@ let ocr = GlmOcr::new_with_device(None, false, device)?;
 | CPU + Q8_0 | ~65-95s | Scroll Twitter once |
 | GPU (RTX 4060) | ~12s | Blink and it's done |
 
-For comparison, `deepseek-ocr.rs` reports **~30s per page** with DeepSeek-OCR (3B, macOS Accelerate) — but that's a 3x larger model with more capable hardware acceleration. On the same candle stack, our 0.9B model at 12s/page on a laptop GPU is in the right ballpark.
-
 VLMs generate tokens one at a time — each token waits for the previous one. That's physics, not a bug. GPU helps because it crunches each token's matrix math faster, not because it parallelizes generation.
 
 ## Layout Detection Setup
@@ -171,7 +169,7 @@ GLM-OCR (0.9B params)
     └── 23-class document layout detection
 ```
 
-Every one of these components — hand-ported to Rust. No bindings. No FFI wrappers around Python. Pure, native Rust all the way down to the matrix multiplications.
+Every one of these components — hand-ported to Rust. No bindings. No FFI wrappers. Pure, native Rust all the way down to the matrix multiplications.
 
 ## Build Options
 
