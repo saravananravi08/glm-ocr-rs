@@ -1,28 +1,12 @@
 # glm-ocr-rs
 
-> *"What if OCR didn't need Python?"*
+> *The lightest VLM that still gets document structure.*
 
-The first pure Rust implementation of [GLM-OCR](https://huggingface.co/unsloth/GLM-OCR) — a 0.9B vision-language model for document understanding. Built from scratch on [candle](https://github.com/huggingface/candle). No Python. No PyTorch. `cargo build` and go.
-
-Every layer, every attention head, every rotary embedding — hand-ported to Rust. The entire model runs from a single binary.
+Pure Rust implementation of [GLM-OCR](https://huggingface.co/unsloth/GLM-OCR) — a 0.9B vision-language model for document understanding. Built from scratch on [candle](https://github.com/huggingface/candle), every layer hand-ported to Rust. The entire model runs from a single binary.
 
 ## Why GLM-OCR?
 
-The Rust OCR ecosystem already has solid options:
-
-| Project | Approach | Model Size |
-|---------|----------|-----------|
-| [ocrs](https://github.com/robertknight/ocrs) | Traditional OCR pipeline (detect + recognize) | ~10 MB |
-| [deepseek-ocr.rs](https://github.com/TimmyOVO/deepseek-ocr.rs) | Multi-VLM engine (DeepSeek-OCR, PaddleOCR-VL, DotsOCR) | 4-9 GB |
-| [oar-ocr](https://github.com/GreatV/oar-ocr) | PaddleOCR port via ONNX Runtime | ~10 MB |
-
-So why this?
-
-**GLM-OCR hits a sweet spot.** At 0.9B parameters (~2.5 GB quantized), it's small enough to run on a laptop GPU but smart enough to understand tables, formulas, and complex document layouts — not just read text line by line. It's the lightest VLM that still *gets* document structure.
-
-`deepseek-ocr.rs` is a beast — multi-model, OpenAI-compatible server, DSQ quantization, the works. But their models start at 3B+ params and need 9-50 GB of RAM. Sometimes you just want a focused, single-model tool that fits in 4 GB and does the job.
-
-That's this.
+At 0.9B parameters (~2.5 GB quantized), GLM-OCR is small enough to run on a laptop GPU but smart enough to understand tables, formulas, and complex document layouts — not just read text line by line.
 
 ## What You Get
 
